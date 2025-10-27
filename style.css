@@ -1,0 +1,374 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.screen {
+    display: none;
+    width: 100%;
+    height: 100vh;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.screen.active {
+    display: flex;
+}
+
+/* 共通コンテナ */
+.title-container, .clear-container {
+    text-align: center;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 60px 40px;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.title-container h1 {
+    font-size: 3rem;
+    color: #333;
+    margin-bottom: 40px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* PCタイトル画面の追加スタイル */
+#qrcode-container {
+    margin-bottom: 30px;
+    padding: 15px;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    background: #f0f0f0;
+}
+
+.connection-status-info {
+    font-size: 1rem;
+    font-weight: bold;
+    margin: 10px 0;
+}
+
+.controller-status-group {
+    margin: 20px 0;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+}
+
+.status-indicator {
+    padding: 5px 15px;
+    border-radius: 5px;
+    font-weight: bold;
+    color: white;
+}
+
+.status-indicator.waiting {
+    background-color: #ffc107; /* 黄色 */
+}
+
+.status-indicator.connected {
+    background-color: #4CAF50; /* 緑 */
+}
+
+/* ゲーム画面 */
+.game-container {
+    background: rgba(255, 255, 255, 0.95);
+    padding: 20px;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    max-width: 1400px;
+    width: 100%;
+}
+
+.game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.game-header span {
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+/* 💡 3分割レイアウト */
+.game-main-tri-view {
+    display: flex;
+    gap: 15px;
+    width: 100%;
+    align-items: flex-start;
+    justify-content: center;
+}
+
+/* P1/P2 拡大ビューのコンテナ */
+.player-view-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 30%;
+    min-width: 300px;
+}
+
+.player-view-container h3 {
+    margin-bottom: 10px;
+}
+
+.player-canvas {
+    width: 100%; 
+    height: auto;
+    border: 5px solid #333;
+    border-radius: 10px;
+    background-color: #000;
+}
+
+.p1-view .player-canvas {
+    border-color: #4CAF50; /* P1カラーの枠 */
+}
+
+.p2-view .player-canvas {
+    border-color: #2196F3; /* P2カラーの枠 */
+}
+
+
+/* 中央パネル (ミニマップと情報) */
+.center-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    width: 40%;
+    min-width: 450px;
+}
+
+.center-panel h3 {
+    text-align: center;
+}
+
+/* ミニマップコンテナ */
+.maze-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 2px solid #333;
+    background-color: #000;
+    border-radius: 5px;
+}
+
+#minimap-canvas {
+    max-width: 100%;
+    height: auto;
+}
+
+/* 2Pステータスとゲームパッド情報 */
+.game-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.player-status {
+    padding: 10px;
+    border-radius: 8px;
+    text-align: center;
+    font-size: 0.9rem;
+    color: white;
+}
+
+.player-status h2 {
+    margin-bottom: 5px;
+    font-size: 1.2rem;
+}
+
+.p1 {
+    background-color: #4CAF50; 
+}
+
+.p2 {
+    background-color: #2196F3; 
+}
+
+.gamepad-info {
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background: #f9f9f9;
+    text-align: center;
+    font-size: 0.9rem; /* サイズを調整 */
+}
+
+.gamepad-info h3 {
+    margin-bottom: 5px;
+    color: #333;
+}
+
+
+/* クリア画面 */
+.clear-container h2 {
+    color: #4CAF50;
+    font-size: 2.5rem;
+    margin-bottom: 15px;
+}
+
+.clear-container p {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin-bottom: 30px;
+}
+
+/* メニューボタン共通 */
+.menu-button {
+    padding: 15px 30px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin: 5px;
+}
+
+.menu-button:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.menu-button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.menu-button.small {
+    padding: 10px 20px;
+    font-size: 1rem;
+}
+
+/* 💡 コントローラー画面のスタイル */
+.controller-container {
+    text-align: center;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 30px;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
+    width: 100%;
+}
+
+#controller-player-title {
+    font-size: 2rem;
+    margin-bottom: 15px;
+}
+
+#controller-game-status {
+    font-size: 1.2rem;
+    font-weight: bold;
+    margin-bottom: 25px;
+}
+
+.dpad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    width: 180px; 
+    height: 180px; 
+    margin: 20px auto;
+    gap: 5px;
+}
+
+.dpad-button {
+    background-color: #555;
+    color: white;
+    font-size: 1.5rem;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.1s;
+    touch-action: manipulation; /* スマホでの操作遅延を減らす */
+}
+
+.dpad-button:active:not(:disabled) {
+    background-color: #333;
+    transform: scale(0.95);
+}
+
+.dpad-button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+.dpad-button.center {
+    background-color: transparent;
+    cursor: default;
+}
+
+/* レスポンシブデザイン */
+@media (max-width: 1250px) {
+    .game-main-tri-view {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .player-view-container {
+        width: 100%;
+        max-width: 450px; 
+    }
+
+    .center-panel {
+        width: 100%;
+        max-width: 450px;
+        flex-direction: row; 
+        flex-wrap: wrap;
+        justify-content: space-around;
+        align-items: center;
+    }
+    
+    .center-panel h3 {
+        width: 100%;
+    }
+
+    .maze-container {
+        width: 225px; 
+        min-width: 225px;
+        order: 1; 
+    }
+
+    .game-sidebar {
+        flex-direction: row; 
+        gap: 10px;
+        order: 2; 
+        width: 100%;
+    }
+}
+
+@media (max-width: 500px) {
+    .center-panel {
+        flex-direction: column;
+        align-items: center;
+    }
+    .game-sidebar {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .title-container, .clear-container, .controller-container {
+        padding: 30px 20px;
+    }
+    
+    .title-container h1 {
+        font-size: 2rem;
+        margin-bottom: 20px;
+    }
+}
