@@ -5,12 +5,15 @@ let masterGainNode = null;
 const DEFAULT_VOLUME = 0.3; 
 
 // サーバーURLを設定 (ご自身のサーバーアドレスに置き換えてください)
-// 例: const SERVER_URL = 'ws://your-server-ip:8080';
-const SERVER_URL = 'ws://localhost:8080'; 
+// QRコードの生成で利用するため、ローカルIPアドレスや公開URLを使用してください。
+const LOCAL_IP = 'localhost'; // サーバーを立てたPCのIPアドレスまたはホスト名
+const SERVER_PORT = 8080;
+const SERVER_URL = `ws://${LOCAL_IP}:${SERVER_PORT}`; 
 
 // WebSocket接続
 let ws = null;
 let clientRole = null; // 'pc' or 'controller'
+let sessionId = null; // 現在のルームID
 let assignedPlayer = null; // 'P1' or 'P2' (スマホのみ)
 
 // 音を生成して再生する汎用関数 (変更なし)
@@ -56,26 +59,24 @@ function playSound(type) {
     oscillator.stop(audioCtx.currentTime + duration);
 }
 
-// 迷路解析のためのカラーコード定数 (RGB形式)
+// 迷路解析のためのカラーコード定数
 const COLOR_MAP = {
-    WALL: '#333333',     // 壁
-    PATH: '#FFFFFF',     // 通路 (通常描画はしない)
-    START: '#0000FF',    // 青 (スタート地点)
-    GOAL: '#FF0000'      // 赤 (ゴール地点)
+    WALL: '#333333',
+    PATH: '#FFFFFF',
+    START: '#0000FF',
+    GOAL: '#FF0000',
+    P1_COLOR: '#4CAF50',
+    P2_COLOR: '#2196F3'
 };
 
-
-// 迷路生成クラス (変更なし)
-class MazeGenerator {
+// MazeGenerator, Player, Maze クラス (変更なし - ロジックは維持)
+class MazeGenerator { /* ... (前回のコードから変更なし) ... */
     static generate(width, height, startCoords, goalCoords) {
         const GRID_WIDTH = width;
         const GRID_HEIGHT = height;
-
         const grid = Array(GRID_HEIGHT).fill(0).map(() => Array(GRID_WIDTH).fill(0));
-
         let currentCell = { x: 1, y: 1 }; 
         grid[currentCell.y][currentCell.x] = 1;
-        
         const walls = [];
 
         const addWalls = (x, y) => {
@@ -83,7 +84,6 @@ class MazeGenerator {
                 const wallX = x + dx;
                 const wallY = y + dy;
                 if (wallX > 0 && wallX < GRID_WIDTH - 1 && wallY > 0 && wallY < GRID_HEIGHT - 1 && grid[wallY][wallX] === 0) {
-                    // 重複を避けるためにSetで管理する方が効率的だが、ここではシンプルに配列にpush
                     if (!walls.some(w => w.x === wallX && w.y === wallY)) {
                         walls.push({ x: wallX, y: wallY });
                     }
@@ -91,7 +91,6 @@ class MazeGenerator {
             });
         };
         addWalls(currentCell.x, currentCell.y);
-
 
         while (walls.length > 0) {
             const wallIndex = Math.floor(Math.random() * walls.length);
@@ -149,8 +148,7 @@ class MazeGenerator {
 }
 
 
-// Playerクラス
-class Player {
+class Player { /* ... (前回のコードから変更なし) ... */
     constructor(id, startX, startY, color) {
         this.id = id; 
         this.x = startX;
@@ -160,7 +158,6 @@ class Player {
         this.visitedCells = new Set([`${startX},${startY}`]);
     }
 
-    // 移動処理
     move(dx, dy, maze) {
         const newX = this.x + dx;
         const newY = this.y + dy;
@@ -174,14 +171,12 @@ class Player {
         return false;
     }
 
-    // ゴールに到達したかチェック
     isAtGoal(maze) {
         return this.x === maze.goal.x && this.y === maze.goal.y;
     }
 }
 
-// 迷路クラス (変更なし)
-class Maze {
+class Maze { /* ... (前回のコードから変更なし) ... */
     constructor(data) {
         this.width = data.width;
         this.height = data.height;
@@ -204,10 +199,11 @@ class Maze {
     }
 }
 
+
 // ゲームクラス
 class MazeGame {
     constructor() {
-        this.currentScreen = 'select'; // 初期画面をselectに変更
+        this.currentScreen = 'select'; 
         this.maze = null;
         this.players = {}; 
         
@@ -218,10 +214,10 @@ class MazeGame {
         this.minimapCanvas = null;
         this.minimapCtx = null;
         
-        this.mazeSize = 45; // 45x45固定
-        this.pViewSize = 5; // 5x5のプレイヤービュー
-        this.pCellSize = 450 / this.pViewSize; // プレイヤービューのセルサイズ (450/5 = 90px)
-        this.mCellSize = 450 / this.mazeSize; // ミニマップのセルサイズ (225/45 = 5px)
+        this.mazeSize = 45; 
+        this.pViewSize = 5; 
+        this.pCellSize = 450 / this.pViewSize; 
+        this.mCellSize = 450 / this.mazeSize; 
         
         this.lastMoveTime = { P1: 0, P2: 0 };
         this.moveDelay = 150; 
@@ -233,29 +229,50 @@ class MazeGame {
         this.setupEventListeners();
         this.initAudio();
         this.showScreen('select');
+        this.checkUrlForController();
+    }
+
+    // URLのハッシュをチェックし、コントローラー接続画面に遷移させる
+    checkUrlForController() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const room = urlParams.get('room');
+        
+        if (room) {
+            this.connectWebSocket('controller', room);
+            document.getElementById('room-id-input').value = room.toUpperCase();
+            this.showScreen('controller'); // 即座にコントローラー画面へ
+            this.setupControllerEvents(); 
+        }
     }
 
     // WebSocket接続処理
-    connectWebSocket(role) {
+    connectWebSocket(role, roomId = null) {
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.close();
         }
         clientRole = role;
+        sessionId = roomId; // コントローラーの場合は入力されたIDを設定
         
         const statusElement = document.getElementById(role === 'pc' ? 'pc-connection-status' : 'controller-connection-status');
-        statusElement.textContent = 'サーバー接続中...';
-
+        if (role === 'controller') {
+            statusElement.textContent = 'サーバー接続中...';
+        }
+        
         ws = new WebSocket(SERVER_URL);
 
         ws.onopen = () => {
             console.log('WebSocket connected as:', role);
             statusElement.textContent = 'サーバー接続済み';
             
-            // サーバーに役割を登録
-            ws.send(JSON.stringify({ type: 'register', role: role }));
+            // サーバーに役割を登録 (PCはIDなし, コントローラーはIDあり)
+            ws.send(JSON.stringify({ 
+                type: 'register', 
+                role: role, 
+                sessionId: sessionId // コントローラーの場合のみIDを送信
+            }));
 
             if (role === 'pc') {
-                this.generateQRCode();
+                document.getElementById('room-info-area').style.display = 'block';
                 document.getElementById('start-button').disabled = true;
             }
         };
@@ -267,7 +284,13 @@ class MazeGame {
         ws.onclose = () => {
             console.log('WebSocket closed. Reconnecting in 3s...');
             statusElement.textContent = 'サーバー接続切断。再接続を試みます...';
-            setTimeout(() => this.connectWebSocket(role), 3000);
+            // PCの場合は自動再接続を試みない
+            if (clientRole === 'controller') {
+                 setTimeout(() => this.connectWebSocket(role, sessionId), 3000);
+            } else {
+                 document.getElementById('room-info-area').style.display = 'none';
+                 document.getElementById('room-id').textContent = '--';
+            }
         };
 
         ws.onerror = (error) => {
@@ -289,6 +312,13 @@ class MazeGame {
 
     handlePCMessage(msg) {
         switch (msg.type) {
+            case 'sessionCreated':
+                sessionId = msg.sessionId;
+                document.getElementById('room-id').textContent = sessionId;
+                // PC自身のIPアドレスを取得してQRコードを生成（ここでは仮にローカルホストを使用）
+                this.generateQRCode(sessionId, LOCAL_IP); 
+                document.getElementById('gamepad-status').textContent = `ルームID: ${sessionId}`;
+                break;
             case 'controllerStatus':
                 this.updateControllerStatus(msg.p1Connected, msg.p2Connected);
                 break;
@@ -309,8 +339,17 @@ class MazeGame {
         switch (msg.type) {
             case 'assigned':
                 assignedPlayer = msg.player;
-                titleElement.textContent = `PLAYER ${msg.player.slice(-1)} コントローラー`;
-                titleElement.style.color = (msg.player === 'P1') ? '#4CAF50' : '#2196F3';
+                const playerNum = assignedPlayer.slice(-1);
+                titleElement.textContent = `PLAYER ${playerNum} コントローラー`;
+                titleElement.className = assignedPlayer === 'P1' ? 'p1-color' : 'p2-color';
+                
+                // ボタンにプレイヤーカラーを適用
+                dpadButtons.forEach(btn => {
+                    btn.classList.remove('p1-color', 'p2-color');
+                    if (!btn.classList.contains('center')) {
+                        btn.classList.add(assignedPlayer === 'P1' ? 'p1-color' : 'p2-color');
+                    }
+                });
                 break;
             case 'gameStatus':
                 if (msg.status === 'started') {
@@ -319,13 +358,16 @@ class MazeGame {
                 } else if (msg.status === 'finished') {
                     statusElement.textContent = `${msg.winner} の勝利！ゲーム終了`;
                     dpadButtons.forEach(btn => btn.disabled = true);
-                } else if (msg.status === 'waiting') {
-                    statusElement.textContent = 'PCクライアントが切断されました。待機中...';
-                    dpadButtons.forEach(btn => btn.disabled = true);
                 }
                 break;
+            case 'serverClosed':
+                statusElement.textContent = msg.message;
+                dpadButtons.forEach(btn => btn.disabled = true);
+                break;
             case 'error':
-                statusElement.textContent = `エラー: ${msg.message}`;
+                document.getElementById('entry-status-message').textContent = msg.message;
+                this.showScreen('controller-entry'); // エラーなら入力画面に戻す
+                if (ws && ws.readyState === WebSocket.OPEN) ws.close();
                 break;
         }
     }
@@ -351,33 +393,34 @@ class MazeGame {
         if (this.currentScreen !== 'game') return;
         const now = Date.now();
         
-        // 移動ディレイチェック
+        // サーバー側でもディレイ処理を推奨しますが、クライアント側でも処理
         if (now - this.lastMoveTime[player] < this.moveDelay) return;
         
         this.lastMoveTime[player] = now;
         this.movePlayer(player, dx, dy);
     }
     
-    // QRコード生成
-    generateQRCode() {
-        const currentUrl = window.location.href; // Github PagesのURL
-        const qrContent = currentUrl + '#controller'; // コントローラーモードに遷移するフラグを追加
+    // QRコード生成 (URLにroomIDを含める)
+    generateQRCode(roomId, serverIp) {
+        // 例: http://githubpages.com/?room=ABCD
+        const base = window.location.href.split('?')[0].split('#')[0]; // URLのクエリとハッシュをクリア
+        const qrContent = `${base}?room=${roomId}`; 
         
-        document.getElementById('qrcode').innerHTML = ''; // 既存のQRコードをクリア
+        document.getElementById('qrcode').innerHTML = '';
         new QRCode(document.getElementById("qrcode"), {
             text: qrContent,
-            width: 150,
-            height: 150,
+            width: 200,
+            height: 200,
             colorDark : "#000000",
             colorLight : "#ffffff",
             correctLevel : QRCode.CorrectLevel.H
         });
 
-        document.getElementById('qr-status').textContent = 'スマホでスキャンしてコントローラーとして接続';
+        document.getElementById('qr-status').textContent = `PCのIP: ${serverIp}`;
     }
 
 
-    initAudio() { /* 変更なし */
+    initAudio() { /* ユーザー操作でAudioContextを初期化するロジック (変更なし) */
         const audioInitHandler = () => {
             if (!audioCtx) {
                 try {
@@ -410,44 +453,52 @@ class MazeGame {
             this.showScreen('pc-title');
         });
         document.getElementById('select-controller-button').addEventListener('click', () => {
-            this.connectWebSocket('controller');
-            this.showScreen('controller');
-            this.setupControllerEvents(); // スマホコントローラーのイベント設定
+            this.showScreen('controller-entry');
         });
         
+        // コントローラーID入力イベント
+        document.getElementById('connect-room-button').addEventListener('click', () => {
+            const inputId = document.getElementById('room-id-input').value.toUpperCase().trim();
+            if (inputId.length === 4) {
+                this.connectWebSocket('controller', inputId);
+                this.showScreen('controller');
+                this.setupControllerEvents();
+            } else {
+                document.getElementById('entry-status-message').textContent = 'ルームIDは4桁で入力してください。';
+            }
+        });
+
         // PC画面イベント
         document.getElementById('start-button').addEventListener('click', () => {
             this.startGame();
-            // サーバーにゲーム開始を通知
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'gameStart' }));
+                ws.send(JSON.stringify({ type: 'gameStart', sessionId: sessionId }));
             }
         });
 
         document.getElementById('back-to-title').addEventListener('click', () => {
             this.showScreen('pc-title');
         });
+        
+        // 選択画面に戻るボタン
         document.getElementById('pc-back-to-select').addEventListener('click', () => {
+            this.showScreen('select');
+            if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+            sessionId = null;
+        });
+        document.getElementById('entry-back-to-select').addEventListener('click', () => {
+            this.showScreen('select');
+            if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+        });
+        document.getElementById('controller-back-to-select').addEventListener('click', () => {
             this.showScreen('select');
             if (ws && ws.readyState === WebSocket.OPEN) ws.close();
         });
         document.getElementById('back-to-select-clear').addEventListener('click', () => {
             this.showScreen('select');
             if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+            sessionId = null;
         });
-        
-        // スマホ画面イベント
-        document.getElementById('controller-back-to-select').addEventListener('click', () => {
-            this.showScreen('select');
-            if (ws && ws.readyState === WebSocket.OPEN) ws.close();
-        });
-        
-        // URLハッシュチェック (コントローラー画面への直接遷移)
-        if (window.location.hash === '#controller') {
-            this.connectWebSocket('controller');
-            this.showScreen('controller');
-            this.setupControllerEvents();
-        }
     }
     
     // スマホコントローラーのボタンイベント設定
@@ -465,33 +516,24 @@ class MazeGame {
 
     // タッチ開始: 移動コマンドを送信
     handleControllerTouchStart(e, button) {
-        if (!assignedPlayer || button.disabled) return;
+        if (!assignedPlayer || button.disabled || !sessionId) return;
         const [dx, dy] = button.dataset.dir.split(',').map(Number);
         
         if (ws && ws.readyState === WebSocket.OPEN && (dx !== 0 || dy !== 0)) {
             ws.send(JSON.stringify({ 
                 type: 'move', 
+                sessionId: sessionId,
                 player: assignedPlayer, 
                 dx: dx, 
                 dy: dy 
             }));
-            
-            // 連続移動を考慮して、ボタンをホールドしている間は定期的に送信 (サーバー側でディレイ処理)
-            // このゲームではサーバー側のディレイで制御するため、クライアントからは1回送信でOKとします。
-            // サーバー側でディレイ処理が実装されているため、ここでは1回のみの送信に留めます。
         }
     }
     
     // タッチ終了: 何もしない (moveDelayで制御するため)
     handleControllerTouchEnd(e, button) {
-        // 必要であれば、ここで移動終了の信号を送ることもできるが、このゲームでは不要
+        //
     }
-
-    // ゲームパッドポーリングの削除
-    // startGamepadPolling() { /* 削除 */ }
-    // updateGamepadStatus() { /* PCではサーバーからの情報で更新 */ }
-    // pollGamepads() { /* 削除 */ }
-    // handleGamepadInput() { /* 削除 */ }
     
     showScreen(screenName) {
         document.querySelectorAll('.screen').forEach(screen => {
@@ -502,7 +544,7 @@ class MazeGame {
     }
     
     startGame() {
-        if (clientRole !== 'pc') return; // PCクライアントのみゲームを開始できる
+        if (clientRole !== 'pc') return; 
 
         const MAZE_SIZE = this.mazeSize;
         const startCoords = { x: 1, y: 1 };
@@ -511,8 +553,8 @@ class MazeGame {
         const mazeData = MazeGenerator.generate(MAZE_SIZE, MAZE_SIZE, startCoords, goalCoords);
         this.maze = new Maze(mazeData);
 
-        this.players['P1'] = new Player('P1', this.maze.start.x, this.maze.start.y, '#4CAF50');
-        this.players['P2'] = new Player('P2', this.maze.start.x, this.maze.start.y, '#2196F3');
+        this.players['P1'] = new Player('P1', this.maze.start.x, this.maze.start.y, COLOR_MAP.P1_COLOR);
+        this.players['P2'] = new Player('P2', this.maze.start.x, this.maze.start.y, COLOR_MAP.P2_COLOR);
 
         // 3つのキャンバスとコンテキストを取得
         this.p1Canvas = document.getElementById('p1-canvas');
@@ -523,7 +565,7 @@ class MazeGame {
         this.minimapCtx = this.minimapCanvas.getContext('2d');
 
         this.showScreen('game');
-        this.updatePlayerStatus(); // 初期ステータス表示
+        this.updatePlayerStatus(); 
         this.render();
     }
 
@@ -538,8 +580,7 @@ class MazeGame {
 
         if (moved) {
             playSound('move');
-            this.render(); // 描画更新
-            this.updatePlayerStatus();
+            this.render(); 
 
             if (player.isAtGoal(this.maze)) {
                 this.completeLevel(playerId);
@@ -551,10 +592,11 @@ class MazeGame {
                 playSound('hit');
             }
         }
+        this.updatePlayerStatus();
     }
     
     // プレイヤーのステータス更新
-    updatePlayerStatus() {
+    updatePlayerStatus() { /* ... (前回のコードから変更なし) ... */
         const p1Status = document.getElementById('status-p1').querySelector('p');
         const p2Status = document.getElementById('status-p2').querySelector('p');
         
@@ -574,11 +616,10 @@ class MazeGame {
     completeLevel(winnerId) {
         playSound('clear');
 
-        // 既にゴールしているプレイヤーがいたら処理しない
         if (this.players.P1.isGoal || this.players.P2.isGoal) return;
         
         this.players[winnerId].isGoal = true;
-        this.updatePlayerStatus(); // ステータスを最終更新
+        this.updatePlayerStatus(); 
 
         document.getElementById('winner-title').textContent = '勝者決定！';
         document.getElementById('clear-message').textContent = `${winnerId} の勝利！`;
@@ -589,7 +630,7 @@ class MazeGame {
 
         // サーバーにゲーム終了を通知
         if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'gameOver', winner: winnerId }));
+            ws.send(JSON.stringify({ type: 'gameOver', sessionId: sessionId, winner: winnerId }));
         }
 
         this.showScreen('clear');
@@ -602,15 +643,14 @@ class MazeGame {
         this.renderPlayerView('P2', this.p2Ctx, this.p2Canvas);
     }
 
-    // ミニマップの描画 (探索済み通路のみ表示)
-    renderMinimap() {
+    // ミニマップの描画 (変更なし)
+    renderMinimap() { /* ... (前回のコードから変更なし) ... */
         const ctx = this.minimapCtx;
         const canvas = this.minimapCanvas;
-        const CELL_SIZE = this.mCellSize; // 5px
+        const CELL_SIZE = this.mCellSize; 
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // 背景を黒にする
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -627,9 +667,8 @@ class MazeGame {
                 const coord = `${x},${y}`;
                 const isWall = this.maze.isWall(x, y);
 
-                // 探索済みの通路、スタート、ゴールのみを描画
                 if (allVisited.has(coord) && !isWall) {
-                    ctx.fillStyle = '#D3D3D3'; // 通路の色 (薄いグレー)
+                    ctx.fillStyle = '#D3D3D3'; 
                     ctx.fillRect(drawX, drawY, CELL_SIZE, CELL_SIZE);
                 } else if (x === this.maze.start.x && y === this.maze.start.y) {
                     ctx.fillStyle = COLOR_MAP.START;
@@ -641,7 +680,6 @@ class MazeGame {
             }
         }
         
-        // プレイヤーの描画 (ミニマップ上ではドットで)
         ['P1', 'P2'].forEach(playerId => {
             const player = this.players[playerId];
             if (player) {
@@ -654,36 +692,30 @@ class MazeGame {
         });
     }
 
-    // プレイヤーの周囲5x5ビューの描画 (拡大表示)
-    renderPlayerView(playerId, ctx, canvas) {
+    // プレイヤーの周囲5x5ビューの描画 (変更なし)
+    renderPlayerView(playerId, ctx, canvas) { /* ... (前回のコードから変更なし) ... */
         const player = this.players[playerId];
         if (!player) return;
 
-        const VIEW_SIZE = this.pViewSize; // 5
-        const HALF_VIEW = Math.floor(VIEW_SIZE / 2); // 2
-        const CELL_SIZE = this.pCellSize; // 90px
+        const VIEW_SIZE = this.pViewSize;
+        const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
+        const CELL_SIZE = this.pCellSize;
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // 描画範囲の中心座標 (プレイヤーのいる位置)
         const centerX = player.x;
         const centerY = player.y;
 
-        // 描画する迷路のセル座標をループ
         for (let viewY = 0; viewY < VIEW_SIZE; viewY++) {
             for (let viewX = 0; viewX < VIEW_SIZE; viewX++) {
-                // 迷路の絶対座標
                 const mazeX = centerX + (viewX - HALF_VIEW);
                 const mazeY = centerY + (viewY - HALF_VIEW);
                 
-                // キャンバス上の描画座標
                 const drawX = viewX * CELL_SIZE;
                 const drawY = viewY * CELL_SIZE;
                 
-                // 迷路の壁/通路判定
                 const isWall = this.maze.isWall(mazeX, mazeY);
                 
-                // 迷路の描画
                 if (isWall) {
                     ctx.fillStyle = COLOR_MAP.WALL;
                     ctx.fillRect(drawX, drawY, CELL_SIZE, CELL_SIZE);
@@ -692,7 +724,6 @@ class MazeGame {
                     ctx.fillRect(drawX, drawY, CELL_SIZE, CELL_SIZE);
                 }
                 
-                // スタートとゴールの描画
                 if (mazeX === this.maze.start.x && mazeY === this.maze.start.y) {
                     ctx.fillStyle = COLOR_MAP.START;
                     ctx.fillRect(drawX, drawY, CELL_SIZE, CELL_SIZE);
@@ -702,14 +733,12 @@ class MazeGame {
                     ctx.fillRect(drawX, drawY, CELL_SIZE, CELL_SIZE);
                 }
                 
-                // プレイヤーの描画
                 if (mazeX === player.x && mazeY === player.y) {
                     ctx.fillStyle = player.color; 
                     ctx.beginPath();
                     ctx.arc(drawX + CELL_SIZE / 2, drawY + CELL_SIZE / 2, CELL_SIZE * 0.4, 0, Math.PI * 2);
                     ctx.fill();
 
-                    // ゴールしている場合は外枠
                     if (player.isGoal) {
                         ctx.strokeStyle = 'gold';
                         ctx.lineWidth = 4;

@@ -15,24 +15,41 @@
             <button id="select-controller-button" class="menu-button">スマホでコントローラーを使用</button>
         </div>
     </div>
-    
+
     <div id="pc-title-screen" class="screen">
         <div class="title-container">
-            <h1>2P迷路レース</h1>
-            <div id="qrcode-container">
-                <p>コントローラー接続用QRコード:</p>
-                <div id="qrcode" style="margin: 20px auto; width: 150px; height: 150px;"></div>
-                <p id="qr-status" style="font-size: 0.9rem; margin-top: 10px;">接続URLを生成中...</p>
-            </div>
+            <h1>2P迷路レース (ホスト画面)</h1>
             
             <p id="pc-connection-status" class="connection-status-info">サーバー接続中...</p>
-            <div class="controller-status-group">
-                <span id="p1-connect-status" class="status-indicator waiting">P1: 待機中</span>
-                <span id="p2-connect-status" class="status-indicator waiting">P2: 待機中</span>
-            </div>
 
-            <button id="start-button" class="menu-button" disabled>ゲーム開始 (P1/P2接続後)</button>
+            <div id="room-info-area" style="display: none;">
+                <h2>ルームID: <span id="room-id" class="room-id-display">--</span></h2>
+                <div id="qrcode-container">
+                    <p>コントローラー接続用QRコード:</p>
+                    <div id="qrcode" style="margin: 20px auto; width: 200px; height: 200px;"></div>
+                    <p id="qr-status" style="font-size: 0.9rem; margin-top: 10px;">スマホでスキャンしてください。</p>
+                </div>
+                
+                <div class="controller-status-group">
+                    <span id="p1-connect-status" class="status-indicator waiting">P1: 待機中</span>
+                    <span id="p2-connect-status" class="status-indicator waiting">P2: 待機中</span>
+                </div>
+
+                <button id="start-button" class="menu-button" disabled>ゲーム開始 (P1/P2接続後)</button>
+            </div>
+            
             <button id="pc-back-to-select" class="menu-button small">選択画面に戻る</button>
+        </div>
+    </div>
+    
+    <div id="controller-entry-screen" class="screen">
+        <div class="title-container">
+            <h1>コントローラー接続</h1>
+            <p>PC画面に表示されたルームIDを入力してください。</p>
+            <input type="text" id="room-id-input" placeholder="例: ABCD" maxlength="4" class="room-id-input">
+            <button id="connect-room-button" class="menu-button">ルームに接続</button>
+            <p id="entry-status-message" class="connection-status-info"></p>
+            <button id="entry-back-to-select" class="menu-button small">選択画面に戻る</button>
         </div>
     </div>
     
@@ -68,7 +85,7 @@
                         </div>
 
                         <div class="gamepad-info">
-                            <h3>コントローラー接続状態</h3>
+                            <h3>接続情報</h3>
                             <p id="gamepad-status">サーバーと通信中...</p>
                         </div>
                     </div>
@@ -89,7 +106,7 @@
             <div class="dpad">
                 <button class="dpad-button up" data-dir="0,-1">▲</button>
                 <button class="dpad-button left" data-dir="-1,0">◀</button>
-                <button class="dpad-button center" disabled></button>
+                <button class="dpad-button center" disabled>OK</button>
                 <button class="dpad-button right" data-dir="1,0">▶</button>
                 <button class="dpad-button down" data-dir="0,1">▼</button>
             </div>
